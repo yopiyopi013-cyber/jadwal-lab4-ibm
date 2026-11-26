@@ -9,13 +9,13 @@ from datetime import date, timedelta
 st.set_page_config(
     page_title="Booking Lab Komputer 4 - SMA Putra IBM",
     page_icon="💻",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 ADMIN_PASSWORD = "adminibm2026"  # <-- Ganti password admin di sini
-DB_FILE = "booking_lab4_ibm_v3.db"
+DB_FILE = "booking_lab4_ibm_v4.db"
 
-# Struktur jam pelajaran sesuai format gambar kedua
 JADWAL_SLOT = [
     {"jam_ke": "1", "waktu": "07.00-07.40", "is_istirahat": False},
     {"jam_ke": "2", "waktu": "07.40-08.20", "is_istirahat": False},
@@ -43,6 +43,39 @@ NAMA_BULAN = {
     9: "September", 10: "Oktober", 11: "November", 12: "Desember"
 }
 
+# CSS tambahan agar nyaman di layar HP Android maupun Laptop
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2.5rem;
+    }
+    .slot-card {
+        border: 1px solid #444;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+        background-color: #1e2229;
+    }
+    .slot-card-booked {
+        border: 1px solid #2e7d32;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+        background-color: #16291a;
+    }
+    .slot-card-rest {
+        border: 1px solid #b28704;
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 10px;
+        background-color: #332700;
+        text-align: center;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # FUNGSI DATABASE (SQLITE)
 # ==========================================
@@ -50,7 +83,7 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
-        CREATE TABLE IF NOT EXISTS bookings_v3 (
+        CREATE TABLE IF NOT EXISTS bookings_v4 (
             tanggal TEXT,
             jam_ke TEXT,
             kelas TEXT,
@@ -66,7 +99,7 @@ def init_db():
 def get_all_bookings():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT tanggal, jam_ke, kelas, pelajaran, guru, materi FROM bookings_v3")
+    c.execute("SELECT tanggal, jam_ke, kelas, pelajaran, guru, materi FROM bookings_v4")
     rows = c.fetchall()
     conn.close()
     data = {}
@@ -83,7 +116,7 @@ def save_booking(tanggal_iso, jam_ke, kelas, pelajaran, guru, materi):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO bookings_v3 (tanggal, jam_ke, kelas, pelajaran, guru, materi)
+        INSERT INTO bookings_v4 (tanggal, jam_ke, kelas, pelajaran, guru, materi)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(tanggal, jam_ke) DO UPDATE SET
             kelas=excluded.kelas,
@@ -97,7 +130,7 @@ def save_booking(tanggal_iso, jam_ke, kelas, pelajaran, guru, materi):
 def delete_booking(tanggal_iso, jam_ke):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("DELETE FROM bookings_v3 WHERE tanggal = ? AND jam_ke = ?", (tanggal_iso, str(jam_ke)))
+    c.execute("DELETE FROM bookings_v4 WHERE tanggal = ? AND jam_ke = ?", (tanggal_iso, str(jam_ke)))
     conn.commit()
     conn.close()
 
@@ -130,160 +163,148 @@ def generate_calendar_dates():
 
 df_calendar = generate_calendar_dates()
 
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+
 # ==========================================
-# SIDEBAR: PILIH BULAN, TANGGAL & LOGIN ADMIN
+# SIDEBAR (OPSIONAL UNTUK LOGIN ADMIN)
 # ==========================================
 with st.sidebar:
     st.title("🏫 SMA Putra IBM")
     st.caption("Lab Komputer 4")
     st.divider()
-
-    daftar_bulan = df_calendar["bulan_tahun"].unique().tolist()
-    selected_bulan = st.selectbox("📅 Pilih Bulan & Tahun:", daftar_bulan, index=0)
-
-    df_bulan = df_calendar[df_calendar["bulan_tahun"] == selected_bulan].copy()
-    pilihan_tanggal_all = dict(zip(df_bulan["tanggal_label"], df_bulan["tanggal_iso"]))
-
-    selected_tgl_label = st.selectbox(
-        "🗓️ Pilih Tanggal / Hari:",
-        list(pilihan_tanggal_all.keys()),
-        index=0
-    )
-    selected_tgl_iso = pilihan_tanggal_all[selected_tgl_label]
-    is_selected_jumat = bool(df_bulan[df_bulan["tanggal_iso"] == selected_tgl_iso]["is_jumat"].iloc[0])
-
-    st.divider()
     st.subheader("🔐 Login Admin")
-    if "is_admin" not in st.session_state:
-        st.session_state.is_admin = False
-
     if not st.session_state.is_admin:
-        pwd_input = st.text_input("Password Admin:", type="password", placeholder="Masukkan password...")
-        if st.button("Masuk sebagai Admin", use_container_width=True):
-            if pwd_input == ADMIN_PASSWORD:
+        pwd_side = st.text_input("Password Admin:", type="password", key="pwd_side", placeholder="Password...")
+        if st.button("Masuk Admin", key="btn_side_login", use_container_width=True):
+            if pwd_side == ADMIN_PASSWORD:
                 st.session_state.is_admin = True
                 st.rerun()
             else:
                 st.error("Password salah!")
     else:
         st.success("✅ Mode Admin Aktif")
-        st.caption("Admin dapat mengedit dan menghapus booking.")
-        if st.button("Keluar (Logout Admin)", use_container_width=True):
+        if st.button("Logout Admin", key="btn_side_logout", use_container_width=True):
             st.session_state.is_admin = False
             st.rerun()
-
-    st.divider()
-    st.info(
-        "**Aturan:**\n"
-        "- **Jumat:** Libur.\n"
-        "- **Minggu:** Masuk normal.\n"
-        "- **Guru:** Bisa mengisi & mengedit data, tidak bisa menghapus.\n"
-        "- **Admin:** Bisa mengedit & menghapus data."
-    )
 
 # ==========================================
 # HEADER UTAMA
 # ==========================================
-st.title("💻 Jadwal Booking Laboratorium Komputer 4")
-st.markdown("#### SMA Putra IBM — Periode Desember 2026 s.d. Desember 2027")
+st.title("💻 Booking Lab Komputer 4")
+st.caption("SMA Putra IBM • Desember 2026 – Desember 2027 • Jumat Libur • Minggu Masuk")
 
-if st.session_state.is_admin:
-    st.warning("🛡️ **MODE ADMIN AKTIF:** Anda bisa mengedit maupun menghapus booking pada jadwal.")
+# Login Admin expander langsung di halaman utama (mudah diakses di HP)
+with st.expander("🔐 Akses Admin (Edit & Hapus Jadwal)", expanded=False):
+    if not st.session_state.is_admin:
+        pwd_main = st.text_input("Masukkan Password Admin:", type="password", key="pwd_main", placeholder="Khusus Admin Lab...")
+        if st.button("Masuk sebagai Admin", key="btn_main_login"):
+            if pwd_main == ADMIN_PASSWORD:
+                st.session_state.is_admin = True
+                st.rerun()
+            else:
+                st.error("Password Admin salah!")
+    else:
+        st.success("✅ Mode Admin Aktif — Anda bisa mengedit dan menghapus jadwal.")
+        if st.button("Keluar dari Mode Admin", key="btn_main_logout"):
+            st.session_state.is_admin = False
+            st.rerun()
 
 # ==========================================
-# TABEL UTAMA (FORMAT SESUAI GAMBAR KE-2)
+# PILIH BULAN & TANGGAL (LANGSUNG TERLIHAT DI HP & LAPTOP)
 # ==========================================
+col_bln, col_tgl, col_mode = st.columns([1.2, 1.5, 1.3])
+
+daftar_bulan = df_calendar["bulan_tahun"].unique().tolist()
+with col_bln:
+    selected_bulan = st.selectbox("📅 Bulan & Tahun:", daftar_bulan, index=0)
+
+df_bulan = df_calendar[df_calendar["bulan_tahun"] == selected_bulan].copy()
+pilihan_tanggal_all = dict(zip(df_bulan["tanggal_label"], df_bulan["tanggal_iso"]))
+
+with col_tgl:
+    selected_tgl_label = st.selectbox("🗓️ Tanggal / Hari:", list(pilihan_tanggal_all.keys()), index=0)
+    selected_tgl_iso = pilihan_tanggal_all[selected_tgl_label]
+    is_selected_jumat = bool(df_bulan[df_bulan["tanggal_iso"] == selected_tgl_iso]["is_jumat"].iloc[0])
+
+with col_mode:
+    tampilan_mode = st.radio(
+        "📱 Tampilan Jadwal:",
+        ["Otomatis / Kartu (Cocok di HP)", "Tabel Penuh (Cocok di Laptop)"],
+        horizontal=False
+    )
+
 bookings_data = get_all_bookings()
 
-rows_for_table = []
-for slot in JADWAL_SLOT:
-    if slot["is_istirahat"]:
-        rows_for_table.append({
-            "TANGGAL/HARI": selected_tgl_label,
-            "JAM - KE": "ISTIRAHAT",
-            "WAKTU": "",
-            "KELAS": "",
-            "PELAJARAN": "",
-            "GURU": "",
-            "MATERI": ""
-        })
-    else:
-        jam_str = slot["jam_ke"]
-        item = bookings_data.get((selected_tgl_iso, jam_str))
+st.divider()
 
-        if is_selected_jumat:
-            rows_for_table.append({
-                "TANGGAL/HARI": selected_tgl_label,
-                "JAM - KE": jam_str,
-                "WAKTU": slot["waktu"],
-                "KELAS": "LIBUR",
-                "PELAJARAN": "LIBUR",
-                "GURU": "LIBUR",
-                "MATERI": "LIBUR"
-            })
-        elif item:
-            rows_for_table.append({
-                "TANGGAL/HARI": selected_tgl_label,
-                "JAM - KE": jam_str,
-                "WAKTU": slot["waktu"],
-                "KELAS": item["kelas"],
-                "PELAJARAN": item["pelajaran"],
-                "GURU": item["guru"],
-                "MATERI": item["materi"]
-            })
+# ==========================================
+# TAMPILAN JADWAL HARIAN
+# ==========================================
+st.subheader(f"📋 Jadwal: {selected_tgl_label}")
+
+if is_selected_jumat:
+    st.error("📅 Hari **Jumat** libur. Silakan pilih tanggal lain.")
+elif tampilan_mode.startswith("Otomatis"):
+    for slot in JADWAL_SLOT:
+        if slot["is_istirahat"]:
+            st.markdown('<div class="slot-card-rest">☕ ISTIRAHAT</div>', unsafe_allow_html=True)
         else:
-            # Kolom dibiarkan kosong jika belum dibooking
+            jam_str = slot["jam_ke"]
+            waktu_str = slot["waktu"]
+            item = bookings_data.get((selected_tgl_iso, jam_str))
+            if item:
+                st.markdown(f"""
+                <div class="slot-card-booked">
+                    <strong>Jam ke-{jam_str}</strong> ({waktu_str}) — <span style="color:#81c784;">Terisi</span><br>
+                    <b>Kelas:</b> {item['kelas']} | <b>Pelajaran:</b> {item['pelajaran']}<br>
+                    <b>Guru:</b> {item['guru']} | <b>Materi:</b> {item['materi']}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="slot-card">
+                    <strong>Jam ke-{jam_str}</strong> ({waktu_str}) — <span style="color:#aaa;">Kosong</span>
+                </div>
+                """, unsafe_allow_html=True)
+else:
+    rows_for_table = []
+    for slot in JADWAL_SLOT:
+        if slot["is_istirahat"]:
             rows_for_table.append({
                 "TANGGAL/HARI": selected_tgl_label,
-                "JAM - KE": jam_str,
-                "WAKTU": slot["waktu"],
+                "JAM - KE": "ISTIRAHAT",
+                "WAKTU": "",
                 "KELAS": "",
                 "PELAJARAN": "",
                 "GURU": "",
                 "MATERI": ""
             })
-
-df_table = pd.DataFrame(rows_for_table)
-
-def style_jadwal_row(row):
-    if row["JAM - KE"] == "ISTIRAHAT":
-        return ["background-color: #f4b400; color: #1f1f1f; font-weight: bold; text-align: center;"] * len(row)
-    if is_selected_jumat:
-        return ["background-color: #ffe5e5; color: #990000; font-weight: bold;"] * len(row)
-
-    styles = []
-    for col in row.index:
-        if col in ["TANGGAL/HARI", "JAM - KE", "WAKTU"]:
-            styles.append("background-color: #fff3cd; color: #222222; font-weight: 500; text-align: center;" if col != "TANGGAL/HARI" else "background-color: #fff3cd; color: #222222; font-weight: 600;")
         else:
-            if str(row[col]).strip() != "":
-                styles.append("background-color: #d1e7dd; color: #0f5132; font-weight: 500;")
-            else:
-                styles.append("background-color: #ffffff; color: #111111;")
-    return styles
-
-st.markdown(f"### 📋 Jadwal: **{selected_tgl_label}**")
-st.dataframe(
-    df_table.style.apply(style_jadwal_row, axis=1),
-    use_container_width=True,
-    height=460,
-    hide_index=True
-)
+            jam_str = slot["jam_ke"]
+            item = bookings_data.get((selected_tgl_iso, jam_str))
+            rows_for_table.append({
+                "TANGGAL/HARI": selected_tgl_label,
+                "JAM - KE": jam_str,
+                "WAKTU": slot["waktu"],
+                "KELAS": item["kelas"] if item else "",
+                "PELAJARAN": item["pelajaran"] if item else "",
+                "GURU": item["guru"] if item else "",
+                "MATERI": item["materi"] if item else ""
+            })
+    df_table = pd.DataFrame(rows_for_table)
+    st.dataframe(df_table, use_container_width=True, height=450, hide_index=True)
 
 st.divider()
 
 # ==========================================
 # FORM INPUT / EDIT / HAPUS BOOKING
 # ==========================================
-st.markdown("### ✍️ Isi / Edit Booking Jadwal")
+st.subheader("✍️ Isi / Edit Booking Jadwal")
 
-if is_selected_jumat:
-    st.error("📅 Hari **Jumat** libur. Silakan pilih tanggal lain di panel sebelah kiri.")
-else:
+if not is_selected_jumat:
     pilih_jam_label = st.selectbox("Pilih Jam - Ke & Waktu:", JAM_AKTIF_LIST)
-    # Ekstrak angka jam ke- (misal "Jam 1 (07.00-07.40)" -> "1")
     jam_ke_terpilih = pilih_jam_label.split(" ")[1]
-
     existing_item = bookings_data.get((selected_tgl_iso, jam_ke_terpilih))
 
     val_kelas = existing_item["kelas"] if existing_item else ""
@@ -292,14 +313,14 @@ else:
     val_materi = existing_item["materi"] if existing_item else ""
 
     if existing_item:
-        st.info(f"ℹ️ Jam ke-**{jam_ke_terpilih}** pada **{selected_tgl_label}** sudah terisi. Anda dapat mengedit datanya di bawah.")
+        st.info(f"ℹ️ Jam ke-**{jam_ke_terpilih}** pada **{selected_tgl_label}** sudah terisi. Silakan ubah jika ingin mengedit.")
 
-    with st.form("form_booking_v3", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
+    with st.form("form_booking_v4", clear_on_submit=False):
+        c1, c2 = st.columns(2)
+        with c1:
             in_kelas = st.text_input("KELAS", value=val_kelas, placeholder="Contoh: X IPA 1")
             in_guru = st.text_input("GURU", value=val_guru, placeholder="Contoh: Budi Santoso, S.Pd")
-        with col2:
+        with c2:
             in_pelajaran = st.text_input("PELAJARAN", value=val_pelajaran, placeholder="Contoh: Informatika")
             in_materi = st.text_input("MATERI", value=val_materi, placeholder="Contoh: Pengenalan Perangkat Keras")
 
@@ -313,8 +334,7 @@ else:
                 st.rerun()
 
     if st.session_state.is_admin and existing_item:
-        st.markdown("#### 🗑️ Hapus Booking (Khusus Admin)")
-        if st.button(f"Hapus Jadwal Jam ke-{jam_ke_terpilih} ({selected_tgl_label})", type="secondary"):
+        if st.button(f"🗑️ Hapus Booking Jam ke-{jam_ke_terpilih}", type="secondary", use_container_width=True):
             delete_booking(selected_tgl_iso, jam_ke_terpilih)
-            st.warning("🗑️ Booking telah dihapus oleh Admin.")
+            st.warning("Booking telah dihapus oleh Admin.")
             st.rerun()
