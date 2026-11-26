@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 # ==========================================
 # KONFIGURASI HALAMAN & PASSWORD ADMIN
@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 ADMIN_PASSWORD = "adminibm2026"  # <-- Ganti password admin di sini
-DB_FILE = "booking_lab4_ibm_v4.db"
+DB_FILE = "booking_lab4_ibm_v5.db"
 
 JADWAL_SLOT = [
     {"jam_ke": "1", "waktu": "07.00-07.40", "is_istirahat": False},
@@ -43,7 +43,6 @@ NAMA_BULAN = {
     9: "September", 10: "Oktober", 11: "November", 12: "Desember"
 }
 
-# CSS tambahan agar nyaman di layar HP Android maupun Laptop
 st.markdown("""
 <style>
     .block-container {
@@ -83,13 +82,15 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
-        CREATE TABLE IF NOT EXISTS bookings_v4 (
+        CREATE TABLE IF NOT EXISTS bookings_v5 (
             tanggal TEXT,
+            bulan_tahun TEXT,
             jam_ke TEXT,
             kelas TEXT,
             pelajaran TEXT,
             guru TEXT,
             materi TEXT,
+            diperbarui_pada TEXT,
             PRIMARY KEY (tanggal, jam_ke)
         )
     ''')
@@ -99,38 +100,49 @@ def init_db():
 def get_all_bookings():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT tanggal, jam_ke, kelas, pelajaran, guru, materi FROM bookings_v4")
+    c.execute("""
+        SELECT tanggal, bulan_tahun, jam_ke, kelas, pelajaran, guru, materi, diperbarui_pada
+        FROM bookings_v5
+        ORDER BY tanggal ASC, CAST(jam_ke AS INTEGER) ASC
+    """)
     rows = c.fetchall()
     conn.close()
     data = {}
     for r in rows:
-        data[(r[0], r[1])] = {
-            "kelas": r[2],
-            "pelajaran": r[3],
-            "guru": r[4],
-            "materi": r[5]
+        data[(r[0], r[2])] = {
+            "tanggal": r[0],
+            "bulan_tahun": r[1],
+            "jam_ke": r[2],
+            "kelas": r[3],
+            "pelajaran": r[4],
+            "guru": r[5],
+            "materi": r[6],
+            "diperbarui_pada": r[7]
         }
     return data
 
-def save_booking(tanggal_iso, jam_ke, kelas, pelajaran, guru, materi):
+def save_booking(tanggal_iso, bulan_tahun, jam_ke, kelas, pelajaran, guru, materi):
+    waktu_simpan = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO bookings_v4 (tanggal, jam_ke, kelas, pelajaran, guru, materi)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO bookings_v5 (tanggal, bulan_tahun, jam_ke, kelas, pelajaran, guru, materi, diperbarui_pada)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(tanggal, jam_ke) DO UPDATE SET
+            bulan_tahun=excluded.bulan_tahun,
             kelas=excluded.kelas,
             pelajaran=excluded.pelajaran,
             guru=excluded.guru,
-            materi=excluded.materi
-    ''', (tanggal_iso, str(jam_ke), kelas.strip(), pelajaran.strip(), guru.strip(), materi.strip()))
+            materi=excluded.materi,
+            diperbarui_pada=excluded.diperbarui_pada
+    ''', (tanggal_iso, bulan_tahun, str(jam_ke), kelas.strip(), pelajaran.strip(), guru.strip(), materi.strip(), waktu_simpan))
     conn.commit()
     conn.close()
 
 def delete_booking(tanggal_iso, jam_ke):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("DELETE FROM bookings_v4 WHERE tanggal = ? AND jam_ke = ?", (tanggal_iso, str(jam_ke)))
+    c.execute("DELETE FROM bookings_v5 WHERE tanggal = ? AND jam_ke = ?", (tanggal_iso, str(jam_ke)))
     conn.commit()
     conn.close()
 
@@ -194,7 +206,6 @@ with st.sidebar:
 st.title("💻 Booking Lab Komputer 4")
 st.caption("SMA Putra IBM • Desember 2026 – Desember 2027 • Jumat Libur • Minggu Masuk")
 
-# Login Admin expander langsung di halaman utama (mudah diakses di HP)
 with st.expander("🔐 Akses Admin (Edit & Hapus Jadwal)", expanded=False):
     if not st.session_state.is_admin:
         pwd_main = st.text_input("Masukkan Password Admin:", type="password", key="pwd_main", placeholder="Khusus Admin Lab...")
@@ -211,7 +222,7 @@ with st.expander("🔐 Akses Admin (Edit & Hapus Jadwal)", expanded=False):
             st.rerun()
 
 # ==========================================
-# PILIH BULAN & TANGGAL (LANGSUNG TERLIHAT DI HP & LAPTOP)
+# PILIH BULAN & TANGGAL
 # ==========================================
 col_bln, col_tgl, col_mode = st.columns([1.2, 1.5, 1.3])
 
@@ -221,6 +232,7 @@ with col_bln:
 
 df_bulan = df_calendar[df_calendar["bulan_tahun"] == selected_bulan].copy()
 pilihan_tanggal_all = dict(zip(df_bulan["tanggal_label"], df_bulan["tanggal_iso"]))
+map_iso_to_label = dict(zip(df_bulan["tanggal_iso"], df_bulan["tanggal_label"]))
 
 with col_tgl:
     selected_tgl_label = st.selectbox("🗓️ Tanggal / Hari:", list(pilihan_tanggal_all.keys()), index=0)
@@ -315,7 +327,7 @@ if not is_selected_jumat:
     if existing_item:
         st.info(f"ℹ️ Jam ke-**{jam_ke_terpilih}** pada **{selected_tgl_label}** sudah terisi. Silakan ubah jika ingin mengedit.")
 
-    with st.form("form_booking_v4", clear_on_submit=False):
+    with st.form("form_booking_v5", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
             in_kelas = st.text_input("KELAS", value=val_kelas, placeholder="Contoh: X IPA 1")
@@ -329,7 +341,7 @@ if not is_selected_jumat:
             if not in_kelas.strip() or not in_pelajaran.strip() or not in_guru.strip() or not in_materi.strip():
                 st.error("⚠️ Harap isi semua kolom: KELAS, PELAJARAN, GURU, dan MATERI.")
             else:
-                save_booking(selected_tgl_iso, jam_ke_terpilih, in_kelas, in_pelajaran, in_guru, in_materi)
+                save_booking(selected_tgl_iso, selected_bulan, jam_ke_terpilih, in_kelas, in_pelajaran, in_guru, in_materi)
                 st.success(f"✅ Booking tersimpan untuk {selected_tgl_label} — Jam ke-{jam_ke_terpilih}!")
                 st.rerun()
 
@@ -338,3 +350,31 @@ if not is_selected_jumat:
             delete_booking(selected_tgl_iso, jam_ke_terpilih)
             st.warning("Booking telah dihapus oleh Admin.")
             st.rerun()
+
+st.divider()
+
+# ==========================================
+# REKAP SEMUA BOOKINGAN TERSIMPAN DALAM 1 BULAN
+# ==========================================
+st.subheader(f"🗂️ Semua Bookingan Tersimpan — {selected_bulan}")
+st.caption("Menampilkan seluruh jadwal yang tersimpan di database untuk bulan terpilih agar mudah dilihat siapa saja.")
+
+bulan_bookings = [
+    {
+        "TANGGAL / HARI": map_iso_to_label.get(v["tanggal"], v["tanggal"]),
+        "JAM - KE": v["jam_ke"],
+        "KELAS": v["kelas"],
+        "PELAJARAN": v["pelajaran"],
+        "GURU": v["guru"],
+        "MATERI": v["materi"],
+        "TERSIMPAN SEJAK": v["diperbarui_pada"]
+    }
+    for (_, _), v in bookings_data.items()
+    if v["bulan_tahun"] == selected_bulan
+]
+
+if bulan_bookings:
+    df_rekap_bulan = pd.DataFrame(bulan_bookings)
+    st.dataframe(df_rekap_bulan, use_container_width=True, hide_index=True)
+else:
+    st.info(f"Belum ada bookingan yang tersimpan pada bulan **{selected_bulan}**.")
